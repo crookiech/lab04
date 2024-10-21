@@ -1,34 +1,45 @@
 #include <iostream>
-#include <map>
 #include <memory>
 #include <cstddef>
+#include <map>
 
 template <class T>
-struct pool_allocator {
+struct CustomAllocator {
     using value_type = T;
     void* pool;
-    pool_allocator () noexcept {}
-    template <class U> pool_allocator (const pool_allocator<U>&) noexcept {}
+    // Конструктор по умолчанию инициализирует CustomAllocator (не выбрасывает исключения)
+    CustomAllocator () noexcept {
+        pool = ::operator new(10*sizeof(T));
+    } 
+    // Деструктор освобождает всю ранее выделенную память при уничтожении объекта CustomAllocator
+    ~CustomAllocator() { ::operator delete(pool); }
+    // Конструктор копирования, который позволяет копировать из другого CustomAllocator другого типа U (не выбрасывает исключения)
+    template <class U> CustomAllocator (const CustomAllocator<U>&) noexcept {}
+    // Функция выделения памяти для n объектов типа T
     T* allocate (std::size_t n) {
-        return static_cast<T*>(::operator new(n*sizeof(T)));
+        return static_cast<T*>(::operator new((2*n*sizeof(T) + 1))); // используется глобальный operator new
     }
-    void deallocate (T* p, std::size_t n) { ::operator delete(p); }
+    // Функция освобождения памяти, на которую указывает p
+    void deallocate (T* p, std::size_t n) { 
+        ::operator delete(p); // используется глобальный operator delete
+    } 
+    // Структура, которая позволяет повторно связывать аллокатор с другим типом U
     template< class U >
     struct rebind {
-        typedef pool_allocator<U> other;
+        typedef CustomAllocator<U> other;
     };
 };
 
 template <class T, class U>
-constexpr bool operator== (const pool_allocator<T>& a1, const pool_allocator<U>& a2) noexcept {
+constexpr bool operator== (const CustomAllocator<T>& a1, const CustomAllocator<U>& a2) noexcept {
     return true;
 }
 template <class T, class U>
-constexpr bool operator!= (const pool_allocator<T>& a1, const pool_allocator<U>& a2) noexcept {
+constexpr bool operator!= (const CustomAllocator<T>& a1, const CustomAllocator<U>& a2) noexcept {
     return false;
 }
 
-template <typename T, typename pool_allocator>
+template <typename T, typename Allocator = CustomAllocator<T>>
 class BidirectionalList {
 private:
     struct Node {
@@ -40,7 +51,7 @@ private:
     Node* head;
     Node* tail;
     int numberOfElements;
-    pool_allocator allocator;
+    Allocator allocator;
 public:
     struct Iterator {
         Node* current;
@@ -76,15 +87,15 @@ public:
     Iterator end() { 
         return Iterator(nullptr); 
     }
-    BidirectionalList() : head(nullptr), tail(nullptr), numberOfElements(0) {}
+    BidirectionalList() : head(nullptr), tail(nullptr), numberOfElements(0), allocator() {}
     BidirectionalList(BidirectionalList&& other) noexcept
-        :  head(other.head), tail(other.tail), numberOfElements(other.numberOfElements) {
+        : head(other.head), tail(other.tail), numberOfElements(other.numberOfElements), allocator(std::move(other.allocator)) {
         other.head = nullptr; 
         other.tail = nullptr;
         other.numberOfElements = 0;
     }
     void push_back(const T& value) {
-        typename pool_allocator::template rebind<Node>::other nodeAlloc;
+        typename Allocator::template rebind<Node>::other nodeAlloc;
         Node* newNode = nodeAlloc.allocate(1);
         new(newNode) Node(value); // Используем placement new для инициализации узла
         if (head == nullptr) {
@@ -102,20 +113,16 @@ public:
         while (current != nullptr) {
             std::cout << current->value;
             if (current->next != nullptr) {
-                std::cout << ", ";
+                std::cout << " ";
             }
             current = current->next;
         }
     }
-    T& operator[](int index) {
-        if (index < 0 || index >= numberOfElements) {
-            std::cout << "Неверный индекс!" << std::endl;
+    bool empty() {
+        if ((head == nullptr) && (tail == nullptr)) {
+            return true;
         }
-        Node* current = head;
-        for (int i = 0; i < index; ++i) {
-            current = current->next;
-        }
-        return current->value;
+        return false;
     }
     int get_size() const {
         return numberOfElements;
@@ -124,7 +131,9 @@ public:
         Node* current = head;
         while (current != nullptr) {
             Node* next = current->next;
-            delete current;
+            // Используем аллокатор для освобождения памяти
+            typename Allocator::template rebind<Node>::other nodeAlloc;
+            nodeAlloc.deallocate(current, 1);
             current = next;
         }
     }
@@ -143,7 +152,7 @@ int main() {
         standardMap[i] = factorial(i);
     }
     // создание экземпляра std::map<int, int> с новым аллокатором, ограниченным 10 элементами
-    std::map<int, int, std::less<int>, pool_allocator<std::pair<const int, int>>> allocatorMap;
+    std::map<int, int, std::less<int>, CustomAllocator<std::pair<const int, int>>> allocatorMap;
     // заполнение 10 элементами, где ключ – это число от 0 до 9, а значение – факториал ключа
     for (int i = 0; i < 10; ++i) {
         allocatorMap[i] = factorial(i);
@@ -152,21 +161,19 @@ int main() {
     for (const auto& pair : allocatorMap) {
         std::cout << pair.first << " " << pair.second << std::endl;
     }
-    // // создание экземпляра своего контейнера для хранения значений типа int
-    // BidirectionalList<int> list;
-    // // заполнение 10 элементами от 0 до 9
-    // for (int i = 0; i <= 9; i++) {
-    //     list.push_back(i);
-    // }
+    // создание экземпляра своего контейнера для хранения значений типа int
+    BidirectionalList<int> list;
+    // заполнение 10 элементами от 0 до 9
+    for (int i = 0; i <= 9; i++) {
+        list.push_back(i);
+    }
     // создание экземпляра своего контейнера для хранения значений типа int с новым аллокатором, ограниченным 10 элементами
-    BidirectionalList<int, pool_allocator<int> > allocatorList;
+    BidirectionalList<int, CustomAllocator<int> > allocatorList;
     // заполнение 10 элементами от 0 до 9
     for (int i = 0; i <= 9; i++) {
         allocatorList.push_back(i);
     }
     // вывод на экран всех значений, хранящихся в контейнере
-    for (auto it = allocatorList.begin(); it != allocatorList.end(); ++it) {
-        std::cout << *it << " ";
-    }
+    allocatorList.print();
     return 0;
 }
