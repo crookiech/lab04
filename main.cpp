@@ -3,24 +3,26 @@
 #include <cstddef>
 #include <map>
 
-template <class T, size_t poolSize = 10>
-struct CustomAllocator {
+// Кастомный аллокатор для выделения памяти для объектов типа T
+template <class T, size_t poolSize = 10> // определение шаблона класса, T — тип данных, poolSize — размер пула (по умолчанию 10)
+class CustomAllocator {
 private:
-    size_t currentMemory; //текущий размер блока
-    size_t allocatedElements; //количество выделенных элементов
-    T * memory; //указатель на начало блока
+    size_t currentMemory; // текущий размер выделенного блока памяти
+    size_t allocatedElements; // количество элементов в выделенной памяти
+    T * memory; // указатель на начало выделенного блока памяти
 public:
-    using value_type = T;
-    void* pool;
-    // Конструктор по умолчанию инициализирует CustomAllocator (не выбрасывает исключения)
+    using value_type = T; // алиас для типа T
+    // Конструктор по умолчанию (не выбрасывает исключения)
+    // Инициализирует CustomAllocator (memory инициализируется указателем на блок памяти, выделенный с помощью std::malloc)
     CustomAllocator () : currentMemory(poolSize), allocatedElements(0), memory(static_cast<T*>(std::malloc(poolSize * sizeof(T)))) {
-        if (!memory) {
-            throw std::bad_alloc();  // Если выделение памяти не удалось, выбрасываем исключение std::bad_alloc
+        if (!memory) { // если выделение памяти не удалось 
+            throw std::bad_alloc();  // выбрасываем исключение std::bad_alloc
         }      
     }
-    // Деструктор освобождает всю ранее выделенную память при уничтожении объекта CustomAllocator
+    // Деструктор (освобождает выделенную память)
     ~CustomAllocator() { std::free(memory); }
-    // Конструктор копирования, который позволяет копировать из другого CustomAllocator другого типа U (не выбрасывает исключения)
+    // Конструктор копирования (не выбрасывает исключения)
+    // Позволяет копировать из другого CustomAllocator другого типа U 
     template <class U> CustomAllocator (const CustomAllocator<U>&) noexcept {}
     // Функция выделения памяти для n объектов типа T
     T* allocate (std::size_t n) {
@@ -28,10 +30,10 @@ public:
     }
     // Функция освобождения памяти, на которую указывает p
     void deallocate (T* p, std::size_t n) { ::operator delete(p); } // используется глобальный operator delete 
-    // Структура, которая позволяет повторно связывать аллокатор с другим типом U
+    // Структура, которая позволяет переназначить тип аллокатора
     template< class U >
     struct rebind {
-        typedef CustomAllocator<U> other;
+        typedef CustomAllocator<U> other; // other — алиас для типа CustomAllocator<U>
     };
 };
 
@@ -46,8 +48,8 @@ constexpr bool operator!= (const CustomAllocator<T>& a1, const CustomAllocator<U
     return false;
 }
 
-// Класс ограниченного контейнера (с фиксированным размером)
-template <typename T, size_t maxSize, typename Allocator = CustomAllocator<T>>
+// Контейнер с фиксированным размером, использующий кастомный аллокатор
+template <typename T, size_t maxSize, typename Allocator = CustomAllocator<T>> // T — тип данных, maxSize — максимальный размер контейнера, Allocator — тип аллокатора (по умолчанию CustomAllocator<T>)
 class LimitedContainer {
 private:
     Allocator alloc; // экземпляр аллокатора
@@ -57,28 +59,29 @@ public:
     // Конструктор по умолчанию (инициализирует данные, размер и аллокатор)
     LimitedContainer() : alloc(), data(nullptr), size(0) {}
     // Деструктор
+    // Освобождает память, выделенную для данных (вызывается автоматически)
     ~LimitedContainer() {
         if (data) {
             alloc.deallocate(data, size);
         }
     }
-    // Добавление элемента в конец контейнера, если контейнер заполнен, выбрасывается исключение
+    // Добавление элемента в конец контейнера
     void push_back(const T& value) {
-        if (size == maxSize) { // проверка на заполненность контейнера
-            throw std::runtime_error("Контейнер уже заполнен!"); 
+        if (size == maxSize) { // если контейнер заполнен
+            throw std::runtime_error("Контейнер уже заполнен!"); // выбрасывание исключения
         }
         if (size == 0) { // если контейнер пустой, выделяем память для данных
-            data = alloc.allocate(maxSize); 
+            data = alloc.allocate(maxSize);
         }
-        new (&data[size]) T(value); // использование placement new для создания нового элемента типа T
+        new (&data[size]) T(value); // использование placement new для создания нового элемента типа T в выделенной памяти
         ++size; // увеличение размера контейнера
     }
-    // Возвращение ссылки на элемент по заданному индексу
+    // Оператор доступа по индексу к элементу контейнера
     const T& operator[](size_t index) const {
-        if (index >= size) {
-            throw std::out_of_range("Неверный индекс!");
+        if (index >= size) { // находится ли индекс в пределах размера контейнера
+            throw std::out_of_range("Неверный индекс!"); // если нет, вырбрасывается исключение
         }
-        return data[index];
+        return data[index]; // иначе, возвращается ссылка на элемент по заданному индексу
     }
     // Возвращение текущего размера контейнера
     size_t getSize() const {
@@ -90,7 +93,8 @@ public:
     }
 };
 
-template <typename T, typename Allocator = CustomAllocator<T>>
+// Двунаправленный список
+template <typename T, typename Allocator = CustomAllocator<T>> // T — тип данных, Allocator — тип аллокатора для выделения памяти (по умолчанию CustomAllocator<T>).
 class BidirectionalList {
 private:
     struct Node {
@@ -102,42 +106,8 @@ private:
     Node* head;
     Node* tail;
     size_t numberOfElements;
-    Allocator allocator;
+    Allocator allocator; // экземпляр аллокатора
 public:
-    struct Iterator {
-        Node* current;
-        Iterator(Node* node) : current(node) {}
-        T& operator*() {
-            if (current == nullptr){
-                std::cout << "Неверный индекс!" << std::endl;
-            }
-            return current->value;
-        }
-        T& get() {
-            if (current == nullptr) {
-                std::cout << "Неверный индекс!" << std::endl;
-            }
-            return current->value;
-        }
-        Iterator& operator++() {
-            if (current != nullptr) current = current->next;
-            return *this;
-        }
-        Iterator& operator--() {
-            if (current != nullptr && current->previous != nullptr)
-                current = current->previous;
-            return *this;
-        }
-        bool operator!=(const Iterator& other) const {
-            return current != other.current;
-        }
-    };
-    Iterator begin() { 
-        return Iterator(head); 
-    }
-    Iterator end() { 
-        return Iterator(nullptr); 
-    }
     BidirectionalList() : head(nullptr), tail(nullptr), numberOfElements(0), allocator() {}
     BidirectionalList(BidirectionalList&& other) noexcept
         : head(other.head), tail(other.tail), numberOfElements(other.numberOfElements), allocator(std::move(other.allocator)) {
@@ -145,11 +115,18 @@ public:
         other.tail = nullptr;
         other.numberOfElements = 0;
     }
-    ~BidirectionalList() { clear(); }
+    ~BidirectionalList() { 
+        Node* current = head;
+        while (current != nullptr) {
+            Node* next = current->next;
+            delete current;
+            current = next;
+        }
+    }
     void push_back(const T& value) {
-        typename Allocator::template rebind<Node>::other nodeAlloc;
-        Node* newNode = nodeAlloc.allocate(1);
-        new(newNode) Node(value); // Используем placement new для инициализации узла
+        typename Allocator::template rebind<Node>::other nodeAlloc; // создание специализированного аллокатора для узлов Node (использует rebind для создания нового аллокатора nodeAlloc, который будет выделять память для объектов типа Node, а не для T)
+        Node* newNode = nodeAlloc.allocate(1); // выделение памяти для одного нового элемента типа Node
+        new(newNode) Node(value); // использование placement new для создания нового объекта типа Node в выделенной памяти (позволяет избежать лишнего вызова new, который бы выделил новую память, а не использовал уже выделенную)
         if (head == nullptr) {
             head = newNode;
             tail = newNode;
@@ -179,15 +156,6 @@ public:
     size_t get_size() const {
         return numberOfElements;
     }
-    // Очистка контейнера
-    void clear() {
-        Node* current = head;
-        while (current != nullptr) {
-            Node* next = current->next;
-            delete current;
-            current = next;
-        }
-    }
 };
 
 // Функция для вычисления факториала
@@ -202,13 +170,14 @@ int main() {
     for (int i = 0; i < 10; ++i) {
         standardMap[i] = factorial(i);
     }
-    // создание экземпляра std::map<int, int> с новым аллокатором, ограниченным 10 элементами
+    // создание экземпляра std::map<int, int> со своим аллокатором
     std::map<int, int, std::less<int>, CustomAllocator<std::pair<const int, int>, 10>> allocatorMap;
     // заполнение 10 элементами, где ключ – это число от 0 до 9, а значение – факториал ключа
     for (int i = 0; i < 10; ++i) {
         allocatorMap[i] = factorial(i);
     }
     // вывод на экран всех значений хранящихся в контейнере
+    std::cout << "Словарь со своим аллокатором: " << std::endl;
     for (const auto& pair : allocatorMap) {
         std::cout << pair.first << " " << pair.second << std::endl;
     }
@@ -218,22 +187,26 @@ int main() {
     for (int i = 0; i <= 9; i++) {
         list.push_back(i);
     }
-    // создание экземпляра своего контейнера для хранения значений типа int с новым аллокатором, ограниченным 10 элементами
+    // создание экземпляра своего контейнера для хранения значений типа int со своим аллокатором
     BidirectionalList<int, CustomAllocator<int> > allocatorList;
     // заполнение 10 элементами от 0 до 9
     for (int i = 0; i <= 9; i++) {
         allocatorList.push_back(i);
     }
     // вывод на экран всех значений, хранящихся в контейнере
+    std::cout << "Свой контейнер со своим аллокатором: ";
     allocatorList.print();
-
-    LimitedContainer<std::pair<const int, int>, 10, CustomAllocator<std::pair<const int, int>, 10>> limited_map;
+    std::cout << std::endl;
+    // создание экземпляра своего контейнера с фиксированным размеом для хранения значений типа int со своим аллокатором
+    LimitedContainer<std::pair<const int, int>, 10, CustomAllocator<std::pair<const int, int>, 10>> limitedMap;
+    // заполнение 10 элементами, где ключ – это число от 0 до 9, а значение – факториал ключа
     for (int i = 0; i < 10; ++i) {
-        limited_map.push_back(std::make_pair(i, factorial(i)));
+        limitedMap.push_back(std::make_pair(i, factorial(i)));
     }
-    std::cout << "LimitedContainer: ";
-    for (size_t i = 0; i < limited_map.getSize(); ++i) {
-        std::cout << limited_map[i].first << " " << limited_map[i].second << std::endl;
+    // вывод на экран всех значений, хранящихся в контейнере
+    std::cout << "Свой контейнер с фиксированным размеом со своим аллокатором: " << std::endl;
+    for (size_t i = 0; i < limitedMap.getSize(); ++i) {
+        std::cout << limitedMap[i].first << " " << limitedMap[i].second << std::endl;
     }
     return 0;
 }
