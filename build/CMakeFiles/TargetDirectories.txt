@@ -1,9 +1,0 @@
-C:/programming/lab04/build/CMakeFiles/lab04.dir
-C:/programming/lab04/build/CMakeFiles/package.dir
-C:/programming/lab04/build/CMakeFiles/package_source.dir
-C:/programming/lab04/build/CMakeFiles/edit_cache.dir
-C:/programming/lab04/build/CMakeFiles/rebuild_cache.dir
-C:/programming/lab04/build/CMakeFiles/list_install_components.dir
-C:/programming/lab04/build/CMakeFiles/install.dir
-C:/programming/lab04/build/CMakeFiles/install/local.dir
-C:/programming/lab04/build/CMakeFiles/install/strip.dir
